@@ -10,8 +10,8 @@ Common optimizations include:
 ## Usage
 
 1. First, get your CI token from https://app.graphite.dev/ci
-2. Set the CI token as a secret in your repository or organisation, named `GRAPHITE_CI_TOKEN`
-   (or whatever you prefer).
+2. Set the CI token as a secret in your repository or organisation, named
+   `GRAPHITE_CI_TOKEN` (or whatever you prefer).
 3. Then, add the CI step to your workflow file:
 
 ```yml

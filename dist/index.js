@@ -28972,6 +28972,190 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 6373:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseConfig = void 0;
+const core = __importStar(__nccwpck_require__(2186));
+const MAX_TIMEOUT = 300;
+/**
+ * This function parses the configuration from the action inputs.
+ */
+function parseConfig() {
+    const graphiteToken = core.getInput('graphite_token', { required: true });
+    const endpoint = core.getInput('endpoint', { required: true });
+    const timeoutStr = core.getInput('timeout', { required: true });
+    const timeout = parseInt(timeoutStr, 10);
+    if (isNaN(timeout) || timeout <= 0 || timeout >= MAX_TIMEOUT) {
+        throw new Error(`Timeout must be a positive integer not exceeding ${MAX_TIMEOUT} seconds`);
+    }
+    return { graphiteToken, endpoint, timeout };
+}
+exports.parseConfig = parseConfig;
+
+
+/***/ }),
+
+/***/ 3706:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.requestWorkflow = void 0;
+const core = __importStar(__nccwpck_require__(2186));
+const github = __importStar(__nccwpck_require__(5438));
+const package_json_1 = __nccwpck_require__(4147);
+/**
+ * This function creates the request body for the Graphite service.
+ */
+function createRequestBody(graphiteToken) {
+    const { repo, payload, sha, ref, runId, workflow, job } = github.context;
+    return {
+        token: graphiteToken,
+        caller: {
+            name: package_json_1.name,
+            version: package_json_1.version
+        },
+        context: {
+            kind: 'GITHUB_ACTIONS',
+            repository: {
+                owner: repo.owner,
+                name: repo.repo
+            },
+            pr: payload.pull_request?.number,
+            sha,
+            ref,
+            head_ref: process.env.GITHUB_HEAD_REF,
+            run: {
+                workflow,
+                job,
+                run: runId
+            }
+        }
+    };
+}
+/**
+ * This function handles the common non-200 responses from the Graphite service.
+ */
+async function handleNonOkResponse(response, requestBody) {
+    switch (response.status) {
+        case 401:
+            core.warning('Invalid authentication. Please check your Graphite token.');
+            break;
+        case 402:
+            core.warning('Your Graphite plan does not support the CI Optimizer. Please upgrade your plan to use this feature.');
+            break;
+        case 429:
+            core.warning('Rate limit exceeded on Graphite Service.');
+            break;
+        default:
+            core.warning('A non-200 status was seen when calling the Graphite Service.');
+            core.warning(`HTTP Response status: ${response.status}  (${response.statusText})`);
+    }
+    core.debug(`Request body: ${JSON.stringify(requestBody)}`);
+    try {
+        const errorBody = await response.text();
+        core.debug(`Error response body: ${errorBody}`);
+    }
+    catch (error) {
+        core.debug('Failed to read error response body');
+    }
+    core.info('Skip: False');
+    core.setOutput('skip', false);
+}
+/**
+ * This function makes a request to the Graphite service to determine if the workflow should be skipped.
+ */
+async function requestWorkflow(config) {
+    const requestBody = createRequestBody(config.graphiteToken);
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), config.timeout * 1000);
+        const result = await fetch(`${config.endpoint}/api/v1/ci/optimizer`, {
+            method: 'POST',
+            body: JSON.stringify(requestBody),
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!result.ok) {
+            await handleNonOkResponse(result, requestBody);
+            return;
+        }
+        const body = (await result.json());
+        core.info(`skip: ${body.skip}`);
+        core.setOutput('skip', body.skip);
+        core.info(body.reason);
+    }
+    catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+            core.warning(`Request timed out after ${config.timeout} seconds`);
+        }
+        else {
+            core.warning('Failed to make request or parse response.');
+        }
+        if (error instanceof Error) {
+            core.debug(`Error details: ${error.message}`);
+        }
+        core.info('skip: false');
+        core.setOutput('skip', false);
+    }
+}
+exports.requestWorkflow = requestWorkflow;
+
+
+/***/ }),
+
 /***/ 399:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -29001,117 +29185,57 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.run = void 0;
+exports.run = exports.checkRunIsValid = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
-const pkg = __importStar(__nccwpck_require__(4147));
+const config_1 = __nccwpck_require__(6373);
+const graphiteService_1 = __nccwpck_require__(3706);
 /**
- * The main function for the action.
- * @returns {Promise<void>} Resolves when the action is complete.
+ * This function checks if the current action is a pull request event.
+ */
+async function checkRunIsValid() {
+    // If this is a workflow dispatch event, then we should not skip.
+    if (github.context.eventName === 'workflow_dispatch') {
+        core.info('Workflow dispatch event detected.');
+        core.info('skip: false');
+        core.setOutput('skip', false);
+        return false;
+    }
+    // If There is no pull request number, then this is not a pull request event.
+    if (github.context.payload.pull_request?.number == null) {
+        core.info('This action is not running on a pull request event.');
+        core.info('skip: false');
+        core.setOutput('skip', false);
+        return false;
+    }
+    return true;
+}
+exports.checkRunIsValid = checkRunIsValid;
+/**
+ * This action will call Graphite.dev to validate whether it needs
+ * to run the workflow or not, based upon the stack context that may have
+ * triggered the run.
  */
 async function run() {
     try {
-        const graphite_token = core.getInput('graphite_token');
-        const endpoint = core.getInput('endpoint');
-        const timeout = core.getInput('timeout');
-        await requestWorkflow({
-            graphite_token,
-            endpoint,
-            timeout
-        });
+        if ((await checkRunIsValid()) === false) {
+            return;
+        }
+        const config = (0, config_1.parseConfig)();
+        await (0, graphiteService_1.requestWorkflow)(config);
     }
     catch (error) {
-        // Fail the workflow run if an error occurs
-        if (error instanceof Error)
+        if (error instanceof Error) {
             core.setFailed(error.message);
+            core.info('skip: false');
+        }
+        else {
+            core.setFailed('An unknown error occurred');
+            core.info('skip: false');
+        }
     }
 }
 exports.run = run;
-async function requestWorkflow({ graphite_token, endpoint, timeout }) {
-    const { repo: { owner, repo } } = github.context;
-    const result = await fetch(`${endpoint}/api/v1/ci/optimizer`, {
-        method: 'POST',
-        body: JSON.stringify({
-            token: graphite_token,
-            caller: {
-                name: pkg.name,
-                version: pkg.version
-            },
-            context: {
-                kind: 'GITHUB_ACTIONS',
-                repository: {
-                    owner,
-                    name: repo
-                },
-                pr: github.context.payload.pull_request?.number,
-                sha: github.context.sha,
-                ref: github.context.ref,
-                head_ref: process.env.GITHUB_HEAD_REF,
-                run: {
-                    workflow: github.context.workflow,
-                    job: github.context.job,
-                    run: github.context.runId
-                }
-            }
-        }),
-        signal: AbortSignal.timeout(parseInt(timeout, 10) * 1000)
-    });
-    if (result.status === 401) {
-        core.warning('Invalid authentication. Skipping Graphite checks.');
-        core.setOutput('skip', false);
-        return;
-    }
-    if (result.status === 402) {
-        core.warning('Your Graphite plan does not support the CI Optimizer. Please upgrade your plan to use this feature.');
-        core.setOutput('skip', false);
-        return;
-    }
-    if (github.context.eventName === 'workflow_dispatch') {
-        core.info('Workflow dispatch event detected. Skipping Graphite checks.');
-        core.setOutput('skip', false);
-        return;
-    }
-    if (result.status !== 200) {
-        const body = JSON.stringify({
-            token: graphite_token,
-            caller: {
-                name: pkg.name,
-                version: pkg.version
-            },
-            context: {
-                kind: 'GITHUB_ACTIONS',
-                repository: {
-                    owner,
-                    name: repo
-                },
-                pr: github.context.payload.pull_request?.number,
-                sha: github.context.sha,
-                ref: github.context.ref,
-                head_ref: process.env.GITHUB_HEAD_REF,
-                run: {
-                    workflow: github.context.workflow,
-                    job: github.context.job,
-                    run: github.context.runId
-                }
-            }
-        });
-        core.warning(`Request body: ${body}`);
-        core.warning(`Response status: ${result.status}`);
-        core.warning(`${owner}/${repo}/${github.context.payload.pull_request?.number}`);
-        core.warning('Response returned a non-200 status. Skipping Graphite checks.');
-        core.setOutput('skip', false);
-        return;
-    }
-    try {
-        const body = await result.json();
-        core.setOutput('skip', body.skip);
-        core.info(body.reason);
-    }
-    catch {
-        core.warning('Failed to parse response body. Skipping Graphite checks.');
-        return;
-    }
-}
 
 
 /***/ }),
