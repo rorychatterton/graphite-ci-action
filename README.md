@@ -10,16 +10,16 @@ Common optimizations include:
 ## Usage
 
 1. First, get your CI token from https://app.graphite.dev/ci
-
-1. Then, add the CI step to your workflow file:
+2. Set the CI token as a secret in your repository or organisation, named `GRAPHITE_CI_TOKEN`
+   (or whatever you prefer).
+3. Then, add the CI step to your workflow file:
 
 ```yml
 steps:
   - name: Checkout
     uses: withgraphite/graphite-ci-action@main
     with:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
-      graphite_token: 'XXX'
+      graphite_token: ${{ secrets.GRAPHITE_CI_TOKEN }}
 ```
 
 To instead use a
