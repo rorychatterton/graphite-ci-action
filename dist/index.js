@@ -29133,9 +29133,9 @@ async function requestWorkflow(config) {
             return;
         }
         const body = (await result.json());
+        core.info(body.reason);
         core.info(`skip: ${body.skip}`);
         core.setOutput('skip', body.skip);
-        core.info(body.reason);
     }
     catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {

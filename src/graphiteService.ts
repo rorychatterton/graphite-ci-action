@@ -134,9 +134,9 @@ export async function requestWorkflow(config: WorkflowConfig): Promise<void> {
     }
 
     const body = (await result.json()) as ResponseBody
+    core.info(body.reason)
     core.info(`skip: ${body.skip}`)
     core.setOutput('skip', body.skip)
-    core.info(body.reason)
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       core.warning(`Request timed out after ${config.timeout} seconds`)
